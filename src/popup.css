@@ -1,0 +1,222 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 350px;
+  max-height: 450px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: #24292f;
+  background: #f6f8fa;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.view[hidden] {
+  display: none !important;
+}
+
+/* Setup & Error views */
+#setup, #error {
+  padding: 24px 16px;
+  text-align: center;
+}
+
+#setup p, #error p {
+  margin-bottom: 12px;
+  color: #57606a;
+}
+
+#loading {
+  padding: 24px 16px;
+  text-align: center;
+  color: #57606a;
+}
+
+/* Search */
+#search {
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid #d0d7de;
+  background: #ffffff;
+  color: #24292f;
+  font-size: 13px;
+  outline: none;
+}
+
+#search::placeholder {
+  color: #8c959f;
+}
+
+#search:focus {
+  border-bottom-color: #0969da;
+}
+
+/* Tree */
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.org-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eaeef2;
+  user-select: none;
+}
+
+.org-header:hover {
+  background: #eaeef2;
+}
+
+.org-toggle {
+  font-size: 10px;
+  color: #57606a;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.org-header.expanded .org-toggle {
+  transform: rotate(90deg);
+}
+
+.org-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.org-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+  color: #24292f;
+}
+
+.org-open {
+  color: #57606a;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.org-open:hover {
+  background: #d0d7de;
+  color: #24292f;
+}
+
+.org-repos {
+  display: none;
+}
+
+.org-repos.visible {
+  display: block;
+}
+
+.repo-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px 6px 40px;
+  cursor: pointer;
+  color: #24292f;
+  border-bottom: 1px solid #eaeef2;
+  font-size: 13px;
+}
+
+.repo-item:hover {
+  background: #eaeef2;
+}
+
+.repo-name {
+  color: #0969da;
+}
+
+.section-label {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #57606a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #eaeef2;
+  background: #f6f8fa;
+}
+
+.empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: #8c959f;
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid #d0d7de;
+  font-size: 11px;
+  color: #8c959f;
+  background: #ffffff;
+}
+
+.footer button {
+  background: none;
+  border: none;
+  color: #57606a;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.footer button:hover {
+  background: #eaeef2;
+  color: #24292f;
+}
+
+/* Buttons (shared) */
+button {
+  padding: 6px 16px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #24292f;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f3f4f6;
+}
+
+.warning {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #9a6700;
+  background: #fff8c5;
+  text-align: center;
+}
