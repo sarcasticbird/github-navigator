@@ -183,22 +183,63 @@ function compareRecent(a, b) {
 }
 
 function sortRepos(repos) {
-  if (sortMode === "recent") {
+  if (sortMode === "recent" || sortMode === "flat") {
     return [...repos].sort(compareRecent);
   }
   return [...repos].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
+const SORT_MODES = ["alpha", "recent", "flat"];
+const SORT_LABELS = { alpha: "A-Z", recent: "\u{1F552}", flat: "\u{2261}" };
+const SORT_TITLES = { alpha: "Sort: alphabetical", recent: "Sort: recent (tree)", flat: "Sort: recent (flat)" };
+
 function updateSortButton() {
-  sortToggleBtn.textContent = sortMode === "alpha" ? "A-Z" : "\u{1F552}";
-  sortToggleBtn.title = sortMode === "alpha" ? "Sort: alphabetical" : "Sort: recent";
+  sortToggleBtn.textContent = SORT_LABELS[sortMode];
+  sortToggleBtn.title = SORT_TITLES[sortMode];
 }
 
 // --- Rendering ---
 
+function renderFlat(query) {
+  const filtered = data.repos.filter((r) =>
+    r.name.toLowerCase().includes(query) || r.full_name.toLowerCase().includes(query)
+  );
+  const sorted = sortRepos(filtered);
+
+  if (sorted.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No results found.";
+    treeEl.appendChild(empty);
+    return;
+  }
+
+  for (const repo of sorted) {
+    const repoRow = document.createElement("div");
+    repoRow.className = "repo-item repo-item-flat";
+
+    const repoName = document.createElement("span");
+    repoName.className = "repo-name";
+    repoName.textContent = repo.full_name;
+    repoRow.appendChild(repoName);
+
+    repoRow.addEventListener("click", () => {
+      browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
+      window.close();
+    });
+
+    treeEl.appendChild(repoRow);
+  }
+}
+
 function renderTree() {
   const query = searchInput.value.toLowerCase();
   treeEl.innerHTML = "";
+
+  if (sortMode === "flat") {
+    renderFlat(query);
+    return;
+  }
 
   const orgLogins = new Set(data.orgs.map((o) => o.login));
 
@@ -441,7 +482,8 @@ async function loadData(forceRefresh) {
 searchInput.addEventListener("input", renderTree);
 
 sortToggleBtn.addEventListener("click", async () => {
-  sortMode = sortMode === "alpha" ? "recent" : "alpha";
+  const idx = SORT_MODES.indexOf(sortMode);
+  sortMode = SORT_MODES[(idx + 1) % SORT_MODES.length];
   await browser.storage.local.set({ [SORT_KEY]: sortMode });
   updateSortButton();
   renderTree();

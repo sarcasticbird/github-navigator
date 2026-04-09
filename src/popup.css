@@ -171,6 +171,10 @@ body {
   font-size: 13px;
 }
 
+.repo-item-flat {
+  padding-left: 12px;
+}
+
 .repo-item:hover {
   background: #eaeef2;
 }
