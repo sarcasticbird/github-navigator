@@ -6,7 +6,7 @@ A Firefox extension for quick access to your GitHub organizations and repositori
 
 - Browse your GitHub orgs and repos from a toolbar popup
 - Search/filter across orgs and repos
-- Two-tab UI: Orgs and Repos
+- Collapsible tree view: orgs expand to show their repos
 - Cached for speed (5-minute TTL)
 - Click to open in a new tab
 

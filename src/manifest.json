@@ -11,7 +11,11 @@
 
     "browser_specific_settings": {
         "gecko": {
-            "id": "github-navigator@local"
+            "id": "github-navigator@sarcasticbird.com",
+            "strict_min_version": "79.0",
+            "data_collection_permissions": {
+                "required": ["authenticationInfo"]
+            }
         }
     },
 
@@ -27,6 +31,7 @@
     },
 
     "permissions": [
-        "storage"
+        "storage",
+        "https://api.github.com/*"
     ]
 }

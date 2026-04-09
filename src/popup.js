@@ -74,9 +74,26 @@ async function fetchAllRepos(token) {
   return repos;
 }
 
+async function fetchAllOrgs(token) {
+  const orgs = [];
+  let page = 1;
+
+  while (true) {
+    const batch = await apiFetch(
+      `/user/orgs?per_page=100&page=${page}`,
+      token
+    );
+    orgs.push(...batch);
+    if (batch.length < 100) break;
+    page++;
+  }
+
+  return orgs;
+}
+
 async function fetchData(token) {
   const [orgs, repos] = await Promise.all([
-    apiFetch("/user/orgs?per_page=100", token),
+    fetchAllOrgs(token),
     fetchAllRepos(token),
   ]);
 
