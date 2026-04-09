@@ -30,9 +30,10 @@ async function saveToken() {
       return;
     }
 
-    await browser.storage.local.set({ github_navigator_pat: token });
+    const user = await response.json();
+    await browser.storage.local.set({ github_navigator_pat: token, github_navigator_user: user.login });
     await browser.storage.local.remove("github_navigator_cache");
-    statusEl.textContent = "Token saved.";
+    statusEl.textContent = `Token saved for ${user.login}.`;
     statusEl.className = "status success";
   } catch (err) {
     statusEl.textContent = "Network error — could not validate token.";

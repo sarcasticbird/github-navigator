@@ -44,12 +44,19 @@ body {
   color: #57606a;
 }
 
-/* Search */
-#search {
-  padding: 8px 12px;
-  border: none;
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
   border-bottom: 1px solid #d0d7de;
   background: #ffffff;
+}
+
+#search {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
   color: #24292f;
   font-size: 13px;
   outline: none;
@@ -59,8 +66,26 @@ body {
   color: #8c959f;
 }
 
-#search:focus {
+.toolbar:focus-within {
   border-bottom-color: #0969da;
+}
+
+#sort-toggle {
+  padding: 4px 8px;
+  margin-right: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #f6f8fa;
+  color: #57606a;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+#sort-toggle:hover {
+  background: #eaeef2;
+  color: #24292f;
 }
 
 /* Tree */
@@ -144,6 +169,10 @@ body {
   color: #24292f;
   border-bottom: 1px solid #eaeef2;
   font-size: 13px;
+}
+
+.repo-item-flat {
+  padding-left: 12px;
 }
 
 .repo-item:hover {
