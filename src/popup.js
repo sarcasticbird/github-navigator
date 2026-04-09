@@ -81,15 +81,12 @@ async function fetchData(token) {
   ]);
 
   return {
-    orgs: orgs.map((o) => ({
-      login: o.login,
-      avatar: o.avatar_url,
-    })),
-    repos: repos.map((r) => ({
-      full_name: r.full_name,
-      owner: r.owner.login,
-      name: r.name,
-    })),
+    orgs: orgs
+      .map((o) => ({ login: o.login, avatar: o.avatar_url }))
+      .sort((a, b) => a.login.localeCompare(b.login, undefined, { sensitivity: "base" })),
+    repos: repos
+      .map((r) => ({ full_name: r.full_name, owner: r.owner.login, name: r.name }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
   };
 }
 
