@@ -130,10 +130,7 @@ async function fetchData(token, username) {
     fetchAllRepos(token),
   ]);
 
-  console.log("[GHNav] username:", username);
   const commitDates = username ? await fetchMyLastCommits(repos, token, username) : {};
-  console.log("[GHNav] repos with recent pushes:", repos.filter((r) => Date.now() - new Date(r.pushed_at) < RECENT_WINDOW_MS).length);
-  console.log("[GHNav] commit dates fetched:", Object.keys(commitDates).length, commitDates);
 
   return {
     orgs: orgs
@@ -187,9 +184,7 @@ function compareRecent(a, b) {
 
 function sortRepos(repos) {
   if (sortMode === "recent") {
-    const sorted = [...repos].sort(compareRecent);
-    console.log("[GHNav] sortRepos recent:", sorted.map((r) => `${r.name} my:${r.my_last_commit} pushed:${r.pushed_at}`));
-    return sorted;
+    return [...repos].sort(compareRecent);
   }
   return [...repos].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
