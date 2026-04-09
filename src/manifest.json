@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "GitHub Navigator",
-    "description": "Quick access to your GitHub organizations and repositories.",
+    "description": "Quick access to your GitHub organizations and repositories. Built for Zen Browser.",
     "version": "1.0.0",
 
     "icons": {
