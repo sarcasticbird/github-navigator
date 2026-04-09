@@ -234,7 +234,7 @@ function renderFlat(query) {
 
 function renderTree() {
   const query = searchInput.value.toLowerCase();
-  treeEl.innerHTML = "";
+  treeEl.replaceChildren();
 
   if (sortMode === "flat") {
     renderFlat(query);
