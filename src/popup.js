@@ -77,7 +77,7 @@ async function fetchAllRepos(token) {
 
 async function fetchData(token) {
   const [orgs, repos] = await Promise.all([
-    apiFetch("/user/orgs", token),
+    apiFetch("/user/orgs?per_page=100", token),
     fetchAllRepos(token),
   ]);
 
@@ -124,7 +124,10 @@ function renderList() {
   });
 
   if (filtered.length === 0) {
-    listEl.innerHTML = `<div class="empty">No ${activeTab} found.</div>`;
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = `No ${activeTab} found.`;
+    listEl.appendChild(empty);
     return;
   }
 
@@ -133,13 +136,26 @@ function renderList() {
     row.className = "list-item";
 
     if (activeTab === "orgs") {
-      row.innerHTML = `<img src="${item.avatar}&s=40" alt=""><span>${item.login}</span>`;
+      const img = document.createElement("img");
+      img.src = `${item.avatar}&s=40`;
+      img.alt = item.login;
+      const span = document.createElement("span");
+      span.textContent = item.login;
+      row.appendChild(img);
+      row.appendChild(span);
       row.addEventListener("click", () => {
         browser.tabs.create({ url: `https://github.com/${item.login}` });
         window.close();
       });
     } else {
-      row.innerHTML = `<span class="repo-owner">${item.owner}/</span><span class="repo-name">${item.name}</span>`;
+      const ownerSpan = document.createElement("span");
+      ownerSpan.className = "repo-owner";
+      ownerSpan.textContent = `${item.owner}/`;
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "repo-name";
+      nameSpan.textContent = item.name;
+      row.appendChild(ownerSpan);
+      row.appendChild(nameSpan);
       row.addEventListener("click", () => {
         browser.tabs.create({ url: `https://github.com/${item.full_name}` });
         window.close();
@@ -192,6 +208,9 @@ async function loadData(forceRefresh) {
   } else {
     showView(loadingView);
   }
+
+  const existingWarning = mainView.querySelector(".warning");
+  if (existingWarning) existingWarning.remove();
 
   try {
     data = await fetchData(token);
