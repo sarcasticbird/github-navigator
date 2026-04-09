@@ -12,15 +12,14 @@ const errorView = document.getElementById("error");
 const loadingView = document.getElementById("loading");
 const errorMessage = document.getElementById("error-message");
 const searchInput = document.getElementById("search");
-const listEl = document.getElementById("list");
+const treeEl = document.getElementById("tree");
 const updatedEl = document.getElementById("updated");
 const refreshBtn = document.getElementById("refresh");
 const openSettingsBtn = document.getElementById("open-settings");
 const errorSettingsBtn = document.getElementById("error-settings");
-const tabs = document.querySelectorAll(".tab");
 
-let activeTab = "orgs";
 let data = { orgs: [], repos: [] };
+let expandedOrgs = new Set();
 
 // --- Views ---
 
@@ -113,56 +112,149 @@ function isFresh(cache) {
 
 // --- Rendering ---
 
-function renderList() {
+function renderTree() {
   const query = searchInput.value.toLowerCase();
-  listEl.innerHTML = "";
+  treeEl.innerHTML = "";
 
-  const items = activeTab === "orgs" ? data.orgs : data.repos;
-  const filtered = items.filter((item) => {
-    const text = activeTab === "orgs" ? item.login : item.full_name;
-    return text.toLowerCase().includes(query);
-  });
+  const orgLogins = new Set(data.orgs.map((o) => o.login));
 
-  if (filtered.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = `No ${activeTab} found.`;
-    listEl.appendChild(empty);
-    return;
+  // Group repos by owner
+  const reposByOwner = {};
+  const personalRepos = [];
+
+  for (const repo of data.repos) {
+    if (orgLogins.has(repo.owner)) {
+      if (!reposByOwner[repo.owner]) reposByOwner[repo.owner] = [];
+      reposByOwner[repo.owner].push(repo);
+    } else {
+      personalRepos.push(repo);
+    }
   }
 
-  for (const item of filtered) {
-    const row = document.createElement("div");
-    row.className = "list-item";
+  let hasVisibleContent = false;
 
-    if (activeTab === "orgs") {
-      const img = document.createElement("img");
-      img.src = `${item.avatar}&s=40`;
-      img.alt = item.login;
-      const span = document.createElement("span");
-      span.textContent = item.login;
-      row.appendChild(img);
-      row.appendChild(span);
-      row.addEventListener("click", () => {
-        browser.tabs.create({ url: `https://github.com/${item.login}` });
+  // Render each org as a collapsible section
+  for (const org of data.orgs) {
+    const orgRepos = reposByOwner[org.login] || [];
+
+    // Filter repos for this org
+    const filteredRepos = orgRepos.filter((r) =>
+      r.name.toLowerCase().includes(query) || r.full_name.toLowerCase().includes(query)
+    );
+    const orgMatchesQuery = org.login.toLowerCase().includes(query);
+
+    // Skip org if neither it nor any of its repos match
+    if (!orgMatchesQuery && filteredRepos.length === 0) continue;
+
+    hasVisibleContent = true;
+    const isExpanded = expandedOrgs.has(org.login);
+    // Auto-expand when searching and repos match
+    const showRepos = isExpanded || (query && filteredRepos.length > 0);
+
+    // Org header row
+    const header = document.createElement("div");
+    header.className = "org-header" + (showRepos ? " expanded" : "");
+
+    const toggle = document.createElement("span");
+    toggle.className = "org-toggle";
+    toggle.textContent = "\u25B6";
+    header.appendChild(toggle);
+
+    const avatar = document.createElement("img");
+    avatar.className = "org-avatar";
+    avatar.src = `${org.avatar}&s=36`;
+    avatar.alt = "";
+    header.appendChild(avatar);
+
+    const name = document.createElement("span");
+    name.className = "org-name";
+    name.textContent = org.login;
+    header.appendChild(name);
+
+    const openBtn = document.createElement("button");
+    openBtn.className = "org-open";
+    openBtn.textContent = "\u2197";
+    openBtn.title = `Open ${org.login} on GitHub`;
+    openBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      browser.tabs.create({ url: `https://github.com/${org.login}` });
+      window.close();
+    });
+    header.appendChild(openBtn);
+
+    header.addEventListener("click", () => {
+      if (expandedOrgs.has(org.login)) {
+        expandedOrgs.delete(org.login);
+      } else {
+        expandedOrgs.add(org.login);
+      }
+      renderTree();
+    });
+
+    treeEl.appendChild(header);
+
+    // Repo list for this org
+    const reposContainer = document.createElement("div");
+    reposContainer.className = "org-repos" + (showRepos ? " visible" : "");
+
+    const reposToShow = query ? filteredRepos : orgRepos;
+    for (const repo of reposToShow) {
+      const repoRow = document.createElement("div");
+      repoRow.className = "repo-item";
+
+      const repoName = document.createElement("span");
+      repoName.className = "repo-name";
+      repoName.textContent = repo.name;
+      repoRow.appendChild(repoName);
+
+      repoRow.addEventListener("click", () => {
+        browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
         window.close();
       });
-    } else {
-      const ownerSpan = document.createElement("span");
-      ownerSpan.className = "repo-owner";
-      ownerSpan.textContent = `${item.owner}/`;
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "repo-name";
-      nameSpan.textContent = item.name;
-      row.appendChild(ownerSpan);
-      row.appendChild(nameSpan);
-      row.addEventListener("click", () => {
-        browser.tabs.create({ url: `https://github.com/${item.full_name}` });
-        window.close();
-      });
+
+      reposContainer.appendChild(repoRow);
     }
 
-    listEl.appendChild(row);
+    treeEl.appendChild(reposContainer);
+  }
+
+  // Personal repos section
+  const filteredPersonal = personalRepos.filter((r) =>
+    r.name.toLowerCase().includes(query) || r.full_name.toLowerCase().includes(query)
+  );
+
+  if (filteredPersonal.length > 0) {
+    hasVisibleContent = true;
+
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = "Personal repos";
+    treeEl.appendChild(label);
+
+    for (const repo of filteredPersonal) {
+      const repoRow = document.createElement("div");
+      repoRow.className = "repo-item";
+      repoRow.style.paddingLeft = "12px";
+
+      const repoName = document.createElement("span");
+      repoName.className = "repo-name";
+      repoName.textContent = repo.name;
+      repoRow.appendChild(repoName);
+
+      repoRow.addEventListener("click", () => {
+        browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
+        window.close();
+      });
+
+      treeEl.appendChild(repoRow);
+    }
+  }
+
+  if (!hasVisibleContent) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No results found.";
+    treeEl.appendChild(empty);
   }
 }
 
@@ -194,7 +286,7 @@ async function loadData(forceRefresh) {
   if (!forceRefresh && isFresh(cache)) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
-    renderList();
+    renderTree();
     showView(mainView);
     return;
   }
@@ -203,7 +295,7 @@ async function loadData(forceRefresh) {
   if (cache) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
-    renderList();
+    renderTree();
     showView(mainView);
   } else {
     showView(loadingView);
@@ -216,17 +308,16 @@ async function loadData(forceRefresh) {
     data = await fetchData(token);
     await saveCache(data);
     renderUpdatedTime(Date.now());
-    renderList();
+    renderTree();
     showView(mainView);
   } catch (err) {
     if (err.message === "auth_failed") {
       showError("Token is invalid or expired.", true);
     } else if (err.message === "rate_limited") {
       if (cache) {
-        // Already showing stale cache — just add a warning
         const warning = document.createElement("div");
         warning.className = "warning";
-        warning.textContent = "Rate limited — showing cached data.";
+        warning.textContent = "Rate limited \u2014 showing cached data.";
         mainView.insertBefore(warning, searchInput);
       } else {
         showError("Rate limited and no cached data available.", false);
@@ -235,23 +326,13 @@ async function loadData(forceRefresh) {
       if (!cache) {
         showError("Failed to fetch data from GitHub.", false);
       }
-      // If we have cache, it's already displayed — silently use stale data
     }
   }
 }
 
 // --- Event Listeners ---
 
-tabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    tabs.forEach((t) => t.classList.remove("active"));
-    tab.classList.add("active");
-    activeTab = tab.dataset.tab;
-    renderList();
-  });
-});
-
-searchInput.addEventListener("input", renderList);
+searchInput.addEventListener("input", renderTree);
 
 refreshBtn.addEventListener("click", () => loadData(true));
 
