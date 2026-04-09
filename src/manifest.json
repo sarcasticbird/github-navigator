@@ -1,0 +1,32 @@
+{
+    "manifest_version": 2,
+    "name": "GitHub Navigator",
+    "description": "Quick access to your GitHub organizations and repositories.",
+    "version": "1.0.0",
+
+    "icons": {
+        "48": "icon.svg",
+        "96": "icon.svg"
+    },
+
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "github-navigator@local"
+        }
+    },
+
+    "browser_action": {
+        "default_icon": "icon.svg",
+        "default_popup": "popup.html",
+        "default_title": "GitHub Navigator"
+    },
+
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": false
+    },
+
+    "permissions": [
+        "storage"
+    ]
+}
