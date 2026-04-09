@@ -31,6 +31,7 @@ async function saveToken() {
     }
 
     await browser.storage.local.set({ github_navigator_pat: token });
+    await browser.storage.local.remove("github_navigator_cache");
     statusEl.textContent = "Token saved.";
     statusEl.className = "status success";
   } catch (err) {
