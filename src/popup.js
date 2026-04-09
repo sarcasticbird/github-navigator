@@ -2,7 +2,9 @@
 
 const CACHE_KEY = "github_navigator_cache";
 const PAT_KEY = "github_navigator_pat";
+const USER_KEY = "github_navigator_user";
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const RECENT_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 const API_BASE = "https://api.github.com";
 
 // DOM references
@@ -15,11 +17,15 @@ const searchInput = document.getElementById("search");
 const treeEl = document.getElementById("tree");
 const updatedEl = document.getElementById("updated");
 const refreshBtn = document.getElementById("refresh");
+const sortToggleBtn = document.getElementById("sort-toggle");
 const openSettingsBtn = document.getElementById("open-settings");
 const errorSettingsBtn = document.getElementById("error-settings");
 
+const SORT_KEY = "github_navigator_sort";
+
 let data = { orgs: [], repos: [] };
 let expandedOrgs = new Set();
+let sortMode = "alpha";
 
 // --- Views ---
 
@@ -27,6 +33,9 @@ function showView(view) {
   [setupView, mainView, errorView, loadingView].forEach((v) => {
     v.hidden = v !== view;
   });
+  if (view === mainView) {
+    searchInput.focus();
+  }
 }
 
 function showError(message, showSettings) {
@@ -91,18 +100,53 @@ async function fetchAllOrgs(token) {
   return orgs;
 }
 
-async function fetchData(token) {
+async function fetchMyLastCommits(repos, token, username) {
+  const now = Date.now();
+  const recentRepos = repos.filter((r) => now - new Date(r.pushed_at) < RECENT_WINDOW_MS);
+  const commitDates = {};
+
+  // Batch in groups of 10 to avoid hammering the API
+  for (let i = 0; i < recentRepos.length; i += 10) {
+    const batch = recentRepos.slice(i, i + 10);
+    const results = await Promise.allSettled(
+      batch.map((r) =>
+        apiFetch(`/repos/${r.full_name}/commits?author=${username}&per_page=1`, token)
+      )
+    );
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled" && result.value.length > 0) {
+        commitDates[batch[j].full_name] = result.value[0].commit.author.date;
+      }
+    }
+  }
+
+  return commitDates;
+}
+
+async function fetchData(token, username) {
   const [orgs, repos] = await Promise.all([
     fetchAllOrgs(token),
     fetchAllRepos(token),
   ]);
+
+  console.log("[GHNav] username:", username);
+  const commitDates = username ? await fetchMyLastCommits(repos, token, username) : {};
+  console.log("[GHNav] repos with recent pushes:", repos.filter((r) => Date.now() - new Date(r.pushed_at) < RECENT_WINDOW_MS).length);
+  console.log("[GHNav] commit dates fetched:", Object.keys(commitDates).length, commitDates);
 
   return {
     orgs: orgs
       .map((o) => ({ login: o.login, avatar: o.avatar_url }))
       .sort((a, b) => a.login.localeCompare(b.login, undefined, { sensitivity: "base" })),
     repos: repos
-      .map((r) => ({ full_name: r.full_name, owner: r.owner.login, name: r.name }))
+      .map((r) => ({
+        full_name: r.full_name,
+        owner: r.owner.login,
+        name: r.name,
+        pushed_at: r.pushed_at,
+        my_last_commit: commitDates[r.full_name] || null,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
   };
 }
@@ -122,6 +166,37 @@ async function saveCache(newData) {
 
 function isFresh(cache) {
   return cache && Date.now() - cache.timestamp < CACHE_TTL_MS;
+}
+
+// --- Sorting ---
+
+function recentScore(repo) {
+  // Repos I committed to sort first (by my commit date), then repos I haven't (by pushed_at)
+  if (repo.my_last_commit) {
+    return { tier: 1, date: new Date(repo.my_last_commit) };
+  }
+  return { tier: 2, date: new Date(repo.pushed_at || 0) };
+}
+
+function compareRecent(a, b) {
+  const sa = recentScore(a);
+  const sb = recentScore(b);
+  if (sa.tier !== sb.tier) return sa.tier - sb.tier;
+  return sb.date - sa.date;
+}
+
+function sortRepos(repos) {
+  if (sortMode === "recent") {
+    const sorted = [...repos].sort(compareRecent);
+    console.log("[GHNav] sortRepos recent:", sorted.map((r) => `${r.name} my:${r.my_last_commit} pushed:${r.pushed_at}`));
+    return sorted;
+  }
+  return [...repos].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
+function updateSortButton() {
+  sortToggleBtn.textContent = sortMode === "alpha" ? "A-Z" : "\u{1F552}";
+  sortToggleBtn.title = sortMode === "alpha" ? "Sort: alphabetical" : "Sort: recent";
 }
 
 // --- Rendering ---
@@ -147,8 +222,22 @@ function renderTree() {
 
   let hasVisibleContent = false;
 
+  // Sort orgs by most-recent repo when in recent mode
+  const orgsToRender = sortMode === "recent"
+    ? [...data.orgs].sort((a, b) => {
+        const aRepos = reposByOwner[a.login] || [];
+        const bRepos = reposByOwner[b.login] || [];
+        const aHasMine = aRepos.some((r) => r.my_last_commit);
+        const bHasMine = bRepos.some((r) => r.my_last_commit);
+        if (aHasMine !== bHasMine) return aHasMine ? -1 : 1;
+        const aMax = aRepos.reduce((t, r) => Math.max(t, recentScore(r).date), 0);
+        const bMax = bRepos.reduce((t, r) => Math.max(t, recentScore(r).date), 0);
+        return bMax - aMax;
+      })
+    : data.orgs;
+
   // Render each org as a collapsible section
-  for (const org of data.orgs) {
+  for (const org of orgsToRender) {
     const orgRepos = reposByOwner[org.login] || [];
 
     // Filter repos for this org
@@ -211,7 +300,7 @@ function renderTree() {
     const reposContainer = document.createElement("div");
     reposContainer.className = "org-repos" + (showRepos ? " visible" : "");
 
-    const reposToShow = query ? filteredRepos : orgRepos;
+    const reposToShow = sortRepos(query ? filteredRepos : orgRepos);
     for (const repo of reposToShow) {
       const repoRow = document.createElement("div");
       repoRow.className = "repo-item";
@@ -237,7 +326,9 @@ function renderTree() {
     r.name.toLowerCase().includes(query) || r.full_name.toLowerCase().includes(query)
   );
 
-  if (filteredPersonal.length > 0) {
+  const sortedPersonal = sortRepos(filteredPersonal);
+
+  if (sortedPersonal.length > 0) {
     hasVisibleContent = true;
 
     const label = document.createElement("div");
@@ -245,7 +336,7 @@ function renderTree() {
     label.textContent = "Personal repos";
     treeEl.appendChild(label);
 
-    for (const repo of filteredPersonal) {
+    for (const repo of sortedPersonal) {
       const repoRow = document.createElement("div");
       repoRow.className = "repo-item";
       repoRow.style.paddingLeft = "12px";
@@ -288,7 +379,13 @@ function renderUpdatedTime(timestamp) {
 // --- Main ---
 
 async function loadData(forceRefresh) {
-  const { [PAT_KEY]: token } = await browser.storage.local.get(PAT_KEY);
+  const stored = await browser.storage.local.get([PAT_KEY, USER_KEY, SORT_KEY]);
+  const token = stored[PAT_KEY];
+  const username = stored[USER_KEY];
+  if (stored[SORT_KEY]) {
+    sortMode = stored[SORT_KEY];
+    updateSortButton();
+  }
 
   if (!token) {
     showView(setupView);
@@ -319,7 +416,7 @@ async function loadData(forceRefresh) {
   if (existingWarning) existingWarning.remove();
 
   try {
-    data = await fetchData(token);
+    data = await fetchData(token, username);
     await saveCache(data);
     renderUpdatedTime(Date.now());
     renderTree();
@@ -332,7 +429,7 @@ async function loadData(forceRefresh) {
         const warning = document.createElement("div");
         warning.className = "warning";
         warning.textContent = "Rate limited \u2014 showing cached data.";
-        mainView.insertBefore(warning, searchInput);
+        mainView.insertBefore(warning, mainView.querySelector(".toolbar"));
       } else {
         showError("Rate limited and no cached data available.", false);
       }
@@ -347,6 +444,13 @@ async function loadData(forceRefresh) {
 // --- Event Listeners ---
 
 searchInput.addEventListener("input", renderTree);
+
+sortToggleBtn.addEventListener("click", async () => {
+  sortMode = sortMode === "alpha" ? "recent" : "alpha";
+  await browser.storage.local.set({ [SORT_KEY]: sortMode });
+  updateSortButton();
+  renderTree();
+});
 
 refreshBtn.addEventListener("click", () => loadData(true));
 
