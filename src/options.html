@@ -61,6 +61,13 @@
       color: #57606a;
       line-height: 1.5;
     }
+    .hint a {
+      color: #0969da;
+      text-decoration: none;
+    }
+    .hint a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -70,7 +77,8 @@
   <button id="save">Save</button>
   <div id="status" class="status"></div>
   <div class="hint">
-    Create a <strong>classic</strong> token at <strong>GitHub &gt; Settings &gt; Developer settings &gt; Personal access tokens &gt; Tokens (classic)</strong>.<br>
+    <a href="https://github.com/settings/tokens/new?scopes=read:org,repo&amp;description=GitHub%20Navigator" target="_blank" rel="noopener noreferrer">Create a classic token with required scopes &rarr;</a><br>
+    Or manage existing tokens at <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">github.com/settings/tokens</a>.<br>
     Fine-grained tokens do not support the org membership API.<br>
     Required scopes: <code>read:org</code>, <code>repo</code>
   </div>
