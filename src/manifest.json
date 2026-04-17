@@ -32,6 +32,7 @@
 
     "permissions": [
         "storage",
+        "tabs",
         "https://api.github.com/*"
     ]
 }

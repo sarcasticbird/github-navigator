@@ -20,6 +20,11 @@ const refreshBtn = document.getElementById("refresh");
 const sortToggleBtn = document.getElementById("sort-toggle");
 const openSettingsBtn = document.getElementById("open-settings");
 const errorSettingsBtn = document.getElementById("error-settings");
+const closeAllTabsBtn = document.getElementById("close-all-tabs");
+const modalEl = document.getElementById("modal");
+const modalMessageEl = document.getElementById("modal-message");
+const modalOkBtn = document.getElementById("modal-ok");
+const modalCancelBtn = document.getElementById("modal-cancel");
 
 const SORT_KEY = "github_navigator_sort";
 
@@ -198,6 +203,46 @@ function updateSortButton() {
   sortToggleBtn.title = SORT_TITLES[sortMode];
 }
 
+// --- Modal ---
+
+function showModal(message, { showCancel, onConfirm }) {
+  modalMessageEl.textContent = message;
+  modalCancelBtn.hidden = !showCancel;
+  modalEl.hidden = false;
+  modalOkBtn.focus();
+
+  const close = () => {
+    modalEl.hidden = true;
+    modalOkBtn.onclick = null;
+    modalCancelBtn.onclick = null;
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", onKey);
+  modalOkBtn.onclick = () => {
+    close();
+    if (onConfirm) onConfirm();
+  };
+  modalCancelBtn.onclick = close;
+}
+
+// --- Tab closing ---
+
+async function closeMatchingTabs(patterns, label) {
+  const tabs = await browser.tabs.query({ url: patterns });
+  if (tabs.length === 0) {
+    showModal(`No ${label} tabs to close.`, { showCancel: false });
+    return;
+  }
+  const noun = tabs.length === 1 ? "tab" : "tabs";
+  showModal(`Close ${tabs.length} ${label} ${noun}?`, {
+    showCancel: true,
+    onConfirm: () => browser.tabs.remove(tabs.map((t) => t.id)),
+  });
+}
+
 // --- Rendering ---
 
 function renderFlat(query) {
@@ -309,6 +354,19 @@ function renderTree() {
     name.className = "org-name";
     name.textContent = org.login;
     header.appendChild(name);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "org-close";
+    closeBtn.textContent = "\u2715";
+    closeBtn.title = `Close ${org.login} tabs`;
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeMatchingTabs(
+        [`*://github.com/${org.login}`, `*://github.com/${org.login}/*`],
+        org.login
+      );
+    });
+    header.appendChild(closeBtn);
 
     const openBtn = document.createElement("button");
     openBtn.className = "org-open";
@@ -490,6 +548,13 @@ sortToggleBtn.addEventListener("click", async () => {
 });
 
 refreshBtn.addEventListener("click", () => loadData(true));
+
+closeAllTabsBtn.addEventListener("click", () => {
+  closeMatchingTabs(
+    ["*://github.com/*", "*://gist.github.com/*"],
+    "GitHub"
+  );
+});
 
 openSettingsBtn.addEventListener("click", () => {
   browser.runtime.openOptionsPage();

@@ -20,6 +20,7 @@
 
     <div class="footer">
       <span id="updated"></span>
+      <button id="close-all-tabs" title="Close all GitHub tabs">&#x2715;</button>
       <button id="refresh" title="Refresh">&#x21bb;</button>
     </div>
   </div>
@@ -31,6 +32,16 @@
 
   <div id="loading" class="view">
     <p>Loading...</p>
+  </div>
+
+  <div id="modal" class="modal-overlay" hidden>
+    <div class="modal">
+      <p id="modal-message"></p>
+      <div class="modal-actions">
+        <button id="modal-cancel" type="button">Cancel</button>
+        <button id="modal-ok" type="button">OK</button>
+      </div>
+    </div>
   </div>
 
   <script src="popup.js"></script>
