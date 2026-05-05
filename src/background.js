@@ -10,6 +10,7 @@ const RELEVANT_REASONS = new Set(["review_requested", "mention"]);
 async function apiFetch(path, token) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { Authorization: `token ${token}` },
+    cache: "no-store",
   });
 
   if (response.status === 401) {
