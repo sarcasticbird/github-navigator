@@ -223,10 +223,14 @@ body {
 }
 
 .footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: #57606a;
   font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
