@@ -223,10 +223,14 @@ body {
 }
 
 .footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: #57606a;
   font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
@@ -319,4 +323,32 @@ button:hover {
 
 #modal-ok:hover {
   background: #0860c7;
+}
+
+.repo-unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0969da;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.org-unread-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 8px;
+  background: #0969da;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
 }

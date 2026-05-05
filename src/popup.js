@@ -1,6 +1,7 @@
 "use strict";
 
 const CACHE_KEY = "github_navigator_cache";
+const NOTIFICATIONS_KEY = "github_navigator_notifications";
 const PAT_KEY = "github_navigator_pat";
 const USER_KEY = "github_navigator_user";
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -21,6 +22,7 @@ const sortToggleBtn = document.getElementById("sort-toggle");
 const openSettingsBtn = document.getElementById("open-settings");
 const errorSettingsBtn = document.getElementById("error-settings");
 const closeAllTabsBtn = document.getElementById("close-all-tabs");
+const openNotificationsBtn = document.getElementById("open-notifications");
 const modalEl = document.getElementById("modal");
 const modalMessageEl = document.getElementById("modal-message");
 const modalOkBtn = document.getElementById("modal-ok");
@@ -29,6 +31,7 @@ const modalCancelBtn = document.getElementById("modal-cancel");
 const SORT_KEY = "github_navigator_sort";
 
 let data = { orgs: [], repos: [] };
+let notifications = { total: 0, byRepo: {}, scopeMissing: false };
 let expandedOrgs = new Set();
 let sortMode = "alpha";
 
@@ -56,12 +59,15 @@ async function apiFetch(path, token) {
     headers: { Authorization: `token ${token}` },
   });
 
-  if (response.status === 401 || response.status === 403) {
-    const isRateLimit = response.headers.get("x-ratelimit-remaining") === "0";
-    if (isRateLimit) {
+  if (response.status === 401) {
+    throw new Error("auth_failed");
+  }
+
+  if (response.status === 403) {
+    if (response.headers.get("x-ratelimit-remaining") === "0") {
       throw new Error("rate_limited");
     }
-    throw new Error("auth_failed");
+    throw new Error("scope_missing");
   }
 
   if (!response.ok) {
@@ -129,6 +135,37 @@ async function fetchMyLastCommits(repos, token, username) {
   return commitDates;
 }
 
+const RELEVANT_REASONS = new Set(["review_requested", "mention"]);
+
+function summarizeNotifications(rawList) {
+  const byRepo = {};
+  let total = 0;
+  for (const item of rawList) {
+    if (!RELEVANT_REASONS.has(item.reason)) continue;
+    const fullName = item.repository && item.repository.full_name;
+    if (!fullName) continue;
+    byRepo[fullName] = (byRepo[fullName] || 0) + 1;
+    total += 1;
+  }
+  return { total, byRepo };
+}
+
+async function fetchNotifications(token) {
+  const raw = await apiFetch("/notifications?per_page=50", token);
+  return summarizeNotifications(raw);
+}
+
+async function writeNotificationsCache(summary, scopeMissing) {
+  await browser.storage.local.set({
+    [NOTIFICATIONS_KEY]: {
+      updatedAt: Date.now(),
+      total: summary.total,
+      byRepo: summary.byRepo,
+      scopeMissing,
+    },
+  });
+}
+
 async function fetchData(token, username) {
   const [orgs, repos] = await Promise.all([
     fetchAllOrgs(token),
@@ -158,6 +195,17 @@ async function fetchData(token, username) {
 async function loadCache() {
   const result = await browser.storage.local.get(CACHE_KEY);
   return result[CACHE_KEY] || null;
+}
+
+async function loadNotificationsCache() {
+  const result = await browser.storage.local.get(NOTIFICATIONS_KEY);
+  const cached = result[NOTIFICATIONS_KEY];
+  if (!cached) return { total: 0, byRepo: {}, scopeMissing: false };
+  return {
+    total: cached.total || 0,
+    byRepo: cached.byRepo || {},
+    scopeMissing: !!cached.scopeMissing,
+  };
 }
 
 async function saveCache(newData) {
@@ -268,6 +316,12 @@ function renderFlat(query) {
     repoName.textContent = repo.full_name;
     repoRow.appendChild(repoName);
 
+    if (notifications.byRepo[repo.full_name]) {
+      const dot = document.createElement("span");
+      dot.className = "repo-unread-dot";
+      repoRow.appendChild(dot);
+    }
+
     repoRow.addEventListener("click", () => {
       browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
       window.close();
@@ -275,6 +329,26 @@ function renderFlat(query) {
 
     treeEl.appendChild(repoRow);
   }
+}
+
+function orgUnreadCount(orgLogin) {
+  let count = 0;
+  for (const fullName in notifications.byRepo) {
+    if (fullName.startsWith(orgLogin + "/")) {
+      count += notifications.byRepo[fullName];
+    }
+  }
+  return count;
+}
+
+function personalUnreadCount(personalRepos) {
+  let count = 0;
+  for (const repo of personalRepos) {
+    if (notifications.byRepo[repo.full_name]) {
+      count += notifications.byRepo[repo.full_name];
+    }
+  }
+  return count;
 }
 
 function renderTree() {
@@ -355,6 +429,14 @@ function renderTree() {
     name.textContent = org.login;
     header.appendChild(name);
 
+    const orgCount = orgUnreadCount(org.login);
+    if (orgCount > 0) {
+      const pill = document.createElement("span");
+      pill.className = "org-unread-count";
+      pill.textContent = String(orgCount);
+      header.appendChild(pill);
+    }
+
     const closeBtn = document.createElement("button");
     closeBtn.className = "org-close";
     closeBtn.textContent = "\u2715";
@@ -404,6 +486,12 @@ function renderTree() {
       repoName.textContent = repo.name;
       repoRow.appendChild(repoName);
 
+      if (notifications.byRepo[repo.full_name]) {
+        const dot = document.createElement("span");
+        dot.className = "repo-unread-dot";
+        repoRow.appendChild(dot);
+      }
+
       repoRow.addEventListener("click", () => {
         browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
         window.close();
@@ -428,6 +516,13 @@ function renderTree() {
     const label = document.createElement("div");
     label.className = "section-label";
     label.textContent = "Personal repos";
+    const personalCount = personalUnreadCount(personalRepos);
+    if (personalCount > 0) {
+      const pill = document.createElement("span");
+      pill.className = "org-unread-count";
+      pill.textContent = String(personalCount);
+      label.appendChild(pill);
+    }
     treeEl.appendChild(label);
 
     for (const repo of sortedPersonal) {
@@ -439,6 +534,12 @@ function renderTree() {
       repoName.className = "repo-name";
       repoName.textContent = repo.name;
       repoRow.appendChild(repoName);
+
+      if (notifications.byRepo[repo.full_name]) {
+        const dot = document.createElement("span");
+        dot.className = "repo-unread-dot";
+        repoRow.appendChild(dot);
+      }
 
       repoRow.addEventListener("click", () => {
         browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
@@ -455,6 +556,26 @@ function renderTree() {
     empty.textContent = "No results found.";
     treeEl.appendChild(empty);
   }
+}
+
+function renderScopeWarning() {
+  const existing = mainView.querySelector(".warning.scope-missing");
+  if (!notifications.scopeMissing) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return;
+
+  const warning = document.createElement("div");
+  warning.className = "warning scope-missing";
+  warning.textContent =
+    "GitHub `notifications` scope missing — click to update PAT.";
+  warning.style.cursor = "pointer";
+  warning.addEventListener("click", () => {
+    browser.runtime.openOptionsPage();
+    window.close();
+  });
+  mainView.insertBefore(warning, mainView.querySelector(".toolbar"));
 }
 
 function renderUpdatedTime(timestamp) {
@@ -487,50 +608,77 @@ async function loadData(forceRefresh) {
   }
 
   const cache = await loadCache();
+  notifications = await loadNotificationsCache();
 
-  if (!forceRefresh && isFresh(cache)) {
-    data = cache;
-    renderUpdatedTime(cache.timestamp);
-    renderTree();
-    showView(mainView);
-    return;
-  }
-
-  // Show stale cache while fetching
   if (cache) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
     renderTree();
+    renderScopeWarning();
     showView(mainView);
   } else {
     showView(loadingView);
   }
 
-  const existingWarning = mainView.querySelector(".warning");
-  if (existingWarning) existingWarning.remove();
+  const existingRateLimit = mainView.querySelector(".warning.rate-limited");
+  if (existingRateLimit) existingRateLimit.remove();
 
-  try {
-    data = await fetchData(token, username);
-    await saveCache(data);
-    renderUpdatedTime(Date.now());
+  const skipDataFetch = !forceRefresh && isFresh(cache);
+
+  const [dataResult, notificationsResult] = await Promise.all([
+    skipDataFetch
+      ? Promise.resolve({ ok: true, freshData: null })
+      : fetchData(token, username).then(
+          (freshData) => ({ ok: true, freshData }),
+          (err) => ({ ok: false, err })
+        ),
+    fetchNotifications(token).then(
+      (summary) => ({ ok: true, summary }),
+      (err) => ({ ok: false, err })
+    ),
+  ]);
+
+  if (notificationsResult.ok) {
+    notifications = { ...notificationsResult.summary, scopeMissing: false };
+    await writeNotificationsCache(notificationsResult.summary, false);
+    browser.browserAction.setBadgeText({
+      text: notifications.total > 0 ? String(notifications.total) : "",
+    });
+  } else if (notificationsResult.err.message === "scope_missing") {
+    notifications = { total: 0, byRepo: {}, scopeMissing: true };
+    await writeNotificationsCache({ total: 0, byRepo: {} }, true);
+    browser.browserAction.setBadgeText({ text: "" });
+  }
+
+  if (dataResult.ok) {
+    if (dataResult.freshData) {
+      data = dataResult.freshData;
+      await saveCache(data);
+      renderUpdatedTime(Date.now());
+    }
     renderTree();
+    renderScopeWarning();
     showView(mainView);
-  } catch (err) {
-    if (err.message === "auth_failed") {
-      showError("Token is invalid or expired.", true);
-    } else if (err.message === "rate_limited") {
+  } else {
+    const errMsg = dataResult.err.message;
+    if (errMsg === "auth_failed" || errMsg === "scope_missing") {
+      showError("Token is invalid or missing required scopes.", true);
+    } else if (errMsg === "rate_limited") {
       if (cache) {
+        renderTree();
         const warning = document.createElement("div");
-        warning.className = "warning";
+        warning.className = "warning rate-limited";
         warning.textContent = "Rate limited \u2014 showing cached data.";
         mainView.insertBefore(warning, mainView.querySelector(".toolbar"));
+        renderScopeWarning();
       } else {
         showError("Rate limited and no cached data available.", false);
       }
+    } else if (!cache) {
+      showError("Failed to fetch data from GitHub.", false);
     } else {
-      if (!cache) {
-        showError("Failed to fetch data from GitHub.", false);
-      }
+      renderTree();
+      renderScopeWarning();
     }
   }
 }
@@ -554,6 +702,11 @@ closeAllTabsBtn.addEventListener("click", () => {
     ["*://github.com/*", "*://gist.github.com/*"],
     "GitHub"
   );
+});
+
+openNotificationsBtn.addEventListener("click", () => {
+  browser.tabs.create({ url: "https://github.com/notifications" });
+  window.close();
 });
 
 openSettingsBtn.addEventListener("click", () => {

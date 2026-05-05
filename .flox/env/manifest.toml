@@ -15,7 +15,7 @@ schema-version = "1.11.0"
 ##  $ flox show gum     <- show all versions of a package
 ## -------------------------------------------------------------------
 [install]
-nodejs.pkg-path = "nodejs"
+nodejs.pkg-path = "nodejs_22"
 
 
 ## Environment Variables ---------------------------------------------
