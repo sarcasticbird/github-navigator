@@ -68,7 +68,16 @@ async function setBadgeColor() {
   await browser.browserAction.setBadgeBackgroundColor({ color: "#0969da" });
 }
 
-async function poll() {
+let pollPromise = null;
+
+function poll() {
+  if (!pollPromise) {
+    pollPromise = pollOnce().finally(() => { pollPromise = null; });
+  }
+  return pollPromise;
+}
+
+async function pollOnce() {
   const stored = await browser.storage.local.get(PAT_KEY);
   const token = stored[PAT_KEY];
   if (!token) {
