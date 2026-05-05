@@ -22,6 +22,7 @@ const sortToggleBtn = document.getElementById("sort-toggle");
 const openSettingsBtn = document.getElementById("open-settings");
 const errorSettingsBtn = document.getElementById("error-settings");
 const closeAllTabsBtn = document.getElementById("close-all-tabs");
+const openNotificationsBtn = document.getElementById("open-notifications");
 const modalEl = document.getElementById("modal");
 const modalMessageEl = document.getElementById("modal-message");
 const modalOkBtn = document.getElementById("modal-ok");
@@ -701,6 +702,11 @@ closeAllTabsBtn.addEventListener("click", () => {
     ["*://github.com/*", "*://gist.github.com/*"],
     "GitHub"
   );
+});
+
+openNotificationsBtn.addEventListener("click", () => {
+  browser.tabs.create({ url: "https://github.com/notifications" });
+  window.close();
 });
 
 openSettingsBtn.addEventListener("click", () => {
