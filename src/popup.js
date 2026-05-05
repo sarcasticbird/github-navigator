@@ -632,53 +632,56 @@ async function loadData(forceRefresh) {
   const existingRateLimit = mainView.querySelector(".warning.rate-limited");
   if (existingRateLimit) existingRateLimit.remove();
 
-  try {
-    const [freshData, notificationsResult] = await Promise.all([
-      fetchData(token, username),
-      fetchNotifications(token).then(
-        (summary) => ({ ok: true, summary }),
-        (err) => ({ ok: false, err })
-      ),
-    ]);
+  const [dataResult, notificationsResult] = await Promise.all([
+    fetchData(token, username).then(
+      (freshData) => ({ ok: true, freshData }),
+      (err) => ({ ok: false, err })
+    ),
+    fetchNotifications(token).then(
+      (summary) => ({ ok: true, summary }),
+      (err) => ({ ok: false, err })
+    ),
+  ]);
 
-    data = freshData;
+  if (notificationsResult.ok) {
+    notifications = { ...notificationsResult.summary, scopeMissing: false };
+    await writeNotificationsCache(notificationsResult.summary, false);
+    browser.browserAction.setBadgeText({
+      text: notifications.total > 0 ? String(notifications.total) : "",
+    });
+  } else if (notificationsResult.err.message === "scope_missing") {
+    notifications = { total: 0, byRepo: {}, scopeMissing: true };
+    await writeNotificationsCache({ total: 0, byRepo: {} }, true);
+    browser.browserAction.setBadgeText({ text: "" });
+  }
+
+  if (dataResult.ok) {
+    data = dataResult.freshData;
     await saveCache(data);
-
-    if (notificationsResult.ok) {
-      notifications = { ...notificationsResult.summary, scopeMissing: false };
-      await writeNotificationsCache(notificationsResult.summary, false);
-      browser.browserAction.setBadgeText({
-        text: notifications.total > 0 ? String(notifications.total) : "",
-      });
-    } else if (notificationsResult.err.message === "scope_missing") {
-      notifications = { total: 0, byRepo: {}, scopeMissing: true };
-      await writeNotificationsCache({ total: 0, byRepo: {} }, true);
-      browser.browserAction.setBadgeText({ text: "" });
-    }
-    // For auth_failed / rate_limited / network on the notifications side: leave
-    // the previously-rendered notifications state alone. The orgs/repos error
-    // handler below will cover whole-token failures.
-
     renderUpdatedTime(Date.now());
     renderTree();
     renderScopeWarning();
     showView(mainView);
-  } catch (err) {
-    if (err.message === "auth_failed" || err.message === "scope_missing") {
+  } else {
+    const errMsg = dataResult.err.message;
+    if (errMsg === "auth_failed" || errMsg === "scope_missing") {
       showError("Token is invalid or missing required scopes.", true);
-    } else if (err.message === "rate_limited") {
+    } else if (errMsg === "rate_limited") {
       if (cache) {
+        renderTree();
         const warning = document.createElement("div");
         warning.className = "warning rate-limited";
         warning.textContent = "Rate limited \u2014 showing cached data.";
         mainView.insertBefore(warning, mainView.querySelector(".toolbar"));
+        renderScopeWarning();
       } else {
         showError("Rate limited and no cached data available.", false);
       }
+    } else if (!cache) {
+      showError("Failed to fetch data from GitHub.", false);
     } else {
-      if (!cache) {
-        showError("Failed to fetch data from GitHub.", false);
-      }
+      renderTree();
+      renderScopeWarning();
     }
   }
 }
