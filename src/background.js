@@ -47,3 +47,44 @@ async function fetchNotifications(token) {
   const raw = await apiFetch("/notifications?per_page=50", token);
   return summarizeNotifications(raw);
 }
+
+async function writeCache(summary, scopeMissing) {
+  await browser.storage.local.set({
+    [NOTIFICATIONS_KEY]: {
+      updatedAt: Date.now(),
+      total: summary.total,
+      byRepo: summary.byRepo,
+      scopeMissing,
+    },
+  });
+}
+
+function updateBadge(total) {
+  const text = total > 0 ? String(total) : "";
+  browser.browserAction.setBadgeText({ text });
+}
+
+async function setBadgeColor() {
+  await browser.browserAction.setBadgeBackgroundColor({ color: "#0969da" });
+}
+
+async function poll() {
+  const stored = await browser.storage.local.get(PAT_KEY);
+  const token = stored[PAT_KEY];
+  if (!token) {
+    updateBadge(0);
+    return;
+  }
+
+  try {
+    const summary = await fetchNotifications(token);
+    await writeCache(summary, false);
+    updateBadge(summary.total);
+  } catch (err) {
+    if (err.message === "scope_missing") {
+      await writeCache({ total: 0, byRepo: {} }, true);
+      updateBadge(0);
+    }
+    // auth_failed, rate_limited, network/5xx: leave previous cache as-is, do nothing
+  }
+}
