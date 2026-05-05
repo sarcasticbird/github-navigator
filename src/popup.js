@@ -609,16 +609,6 @@ async function loadData(forceRefresh) {
   const cache = await loadCache();
   notifications = await loadNotificationsCache();
 
-  if (!forceRefresh && isFresh(cache)) {
-    data = cache;
-    renderUpdatedTime(cache.timestamp);
-    renderTree();
-    renderScopeWarning();
-    showView(mainView);
-    return;
-  }
-
-  // Show stale cache while fetching
   if (cache) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
@@ -632,11 +622,15 @@ async function loadData(forceRefresh) {
   const existingRateLimit = mainView.querySelector(".warning.rate-limited");
   if (existingRateLimit) existingRateLimit.remove();
 
+  const skipDataFetch = !forceRefresh && isFresh(cache);
+
   const [dataResult, notificationsResult] = await Promise.all([
-    fetchData(token, username).then(
-      (freshData) => ({ ok: true, freshData }),
-      (err) => ({ ok: false, err })
-    ),
+    skipDataFetch
+      ? Promise.resolve({ ok: true, freshData: null })
+      : fetchData(token, username).then(
+          (freshData) => ({ ok: true, freshData }),
+          (err) => ({ ok: false, err })
+        ),
     fetchNotifications(token).then(
       (summary) => ({ ok: true, summary }),
       (err) => ({ ok: false, err })
@@ -656,9 +650,11 @@ async function loadData(forceRefresh) {
   }
 
   if (dataResult.ok) {
-    data = dataResult.freshData;
-    await saveCache(data);
-    renderUpdatedTime(Date.now());
+    if (dataResult.freshData) {
+      data = dataResult.freshData;
+      await saveCache(data);
+      renderUpdatedTime(Date.now());
+    }
     renderTree();
     renderScopeWarning();
     showView(mainView);
