@@ -32,7 +32,13 @@ async function saveToken() {
 
     const user = await response.json();
     await browser.storage.local.set({ github_navigator_pat: token, github_navigator_user: user.login });
-    await browser.storage.local.remove("github_navigator_cache");
+    await browser.storage.local.remove([
+      "github_navigator_cache",
+      "github_navigator_notifications",
+    ]);
+    await browser.alarms.clear("notifications-poll");
+    browser.alarms.create("notifications-poll", { periodInMinutes: 5 });
+    browser.browserAction.setBadgeText({ text: "" });
     statusEl.textContent = `Token saved for ${user.login}.`;
     statusEl.className = "status success";
   } catch (err) {
