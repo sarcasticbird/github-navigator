@@ -72,6 +72,7 @@ async function poll() {
   const stored = await browser.storage.local.get(PAT_KEY);
   const token = stored[PAT_KEY];
   if (!token) {
+    await writeCache({ total: 0, byRepo: {} }, false);
     updateBadge(0);
     return;
   }
