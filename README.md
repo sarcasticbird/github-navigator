@@ -20,13 +20,12 @@ A Firefox/Zen Browser extension for quick access to your GitHub organizations an
 
 ## Development
 
+Node 22 is pinned via the Flox environment; `web-ext` is pinned in `package.json`.
+
 ```sh
-# Lint
-flox activate -c 'npx web-ext lint --source-dir src'
+flox activate -c 'npm install'   # first time only, rebuilds node_modules
 
-# Run in Firefox with hot reload
-flox activate -c 'npx web-ext run --source-dir src --target firefox-desktop'
-
-# Build
-flox activate -c 'npx web-ext build --source-dir src --artifacts-dir dist'
+flox activate -c 'npm run lint'
+flox activate -c 'npm run start' # run in Firefox with hot reload
+flox activate -c 'npm run build' # produces .xpi in dist/
 ```
