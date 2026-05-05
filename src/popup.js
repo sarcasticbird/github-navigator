@@ -557,6 +557,26 @@ function renderTree() {
   }
 }
 
+function renderScopeWarning() {
+  const existing = mainView.querySelector(".warning.scope-missing");
+  if (!notifications.scopeMissing) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return;
+
+  const warning = document.createElement("div");
+  warning.className = "warning scope-missing";
+  warning.textContent =
+    "GitHub `notifications` scope missing — click to update PAT.";
+  warning.style.cursor = "pointer";
+  warning.addEventListener("click", () => {
+    browser.runtime.openOptionsPage();
+    window.close();
+  });
+  mainView.insertBefore(warning, mainView.querySelector(".toolbar"));
+}
+
 function renderUpdatedTime(timestamp) {
   if (!timestamp) {
     updatedEl.textContent = "";
@@ -593,6 +613,7 @@ async function loadData(forceRefresh) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
     renderTree();
+    renderScopeWarning();
     showView(mainView);
     return;
   }
@@ -602,6 +623,7 @@ async function loadData(forceRefresh) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
     renderTree();
+    renderScopeWarning();
     showView(mainView);
   } else {
     showView(loadingView);
@@ -639,6 +661,7 @@ async function loadData(forceRefresh) {
 
     renderUpdatedTime(Date.now());
     renderTree();
+    renderScopeWarning();
     showView(mainView);
   } catch (err) {
     if (err.message === "auth_failed" || err.message === "scope_missing") {
