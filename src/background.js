@@ -88,3 +88,28 @@ async function poll() {
     // auth_failed, rate_limited, network/5xx: leave previous cache as-is, do nothing
   }
 }
+
+async function ensureAlarm() {
+  const existing = await browser.alarms.get(ALARM_NAME);
+  if (!existing) {
+    browser.alarms.create(ALARM_NAME, { periodInMinutes: POLL_INTERVAL_MINUTES });
+  }
+}
+
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_NAME) {
+    poll();
+  }
+});
+
+browser.runtime.onInstalled.addListener(async () => {
+  await setBadgeColor();
+  await ensureAlarm();
+  poll();
+});
+
+browser.runtime.onStartup.addListener(async () => {
+  await setBadgeColor();
+  await ensureAlarm();
+  poll();
+});
