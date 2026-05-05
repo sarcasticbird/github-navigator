@@ -84,8 +84,11 @@ async function poll() {
     if (err.message === "scope_missing") {
       await writeCache({ total: 0, byRepo: {} }, true);
       updateBadge(0);
+    } else if (err.message === "auth_failed") {
+      await writeCache({ total: 0, byRepo: {} }, false);
+      updateBadge(0);
     }
-    // auth_failed, rate_limited, network/5xx: leave previous cache as-is, do nothing
+    // rate_limited, network/5xx: leave previous cache as-is, do nothing
   }
 }
 
