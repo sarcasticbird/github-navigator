@@ -629,8 +629,8 @@ async function loadData(forceRefresh) {
     showView(loadingView);
   }
 
-  const existingWarning = mainView.querySelector(".warning");
-  if (existingWarning) existingWarning.remove();
+  const existingRateLimit = mainView.querySelector(".warning.rate-limited");
+  if (existingRateLimit) existingRateLimit.remove();
 
   try {
     const [freshData, notificationsResult] = await Promise.all([
@@ -669,7 +669,7 @@ async function loadData(forceRefresh) {
     } else if (err.message === "rate_limited") {
       if (cache) {
         const warning = document.createElement("div");
-        warning.className = "warning";
+        warning.className = "warning rate-limited";
         warning.textContent = "Rate limited \u2014 showing cached data.";
         mainView.insertBefore(warning, mainView.querySelector(".toolbar"));
       } else {
