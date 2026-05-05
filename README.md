@@ -11,12 +11,13 @@ A Firefox/Zen Browser extension for quick access to your GitHub organizations an
 - Hybrid sort: repos you've committed to recently float to the top
 - Cached for speed (5-minute TTL with stale-while-revalidate)
 - Click any repo to open in a new tab
+- Unread indicator for review requests and @-mentions (dot per repo, count per org, count on toolbar icon)
 
 ## Setup
 
 1. Install the extension in Firefox or Zen Browser (load from `src/` as a temporary add-on, or install the built `.xpi`)
 2. Click the toolbar icon and follow the prompt to add your GitHub Personal Access Token
-3. Your token needs these scopes: `read:org`, `repo` (must be a **classic** token — fine-grained tokens don't support the org membership API)
+3. Your token needs these scopes: `read:org`, `repo`, `notifications` (must be a **classic** token — fine-grained tokens don't support the org membership API)
 
 ## Development
 
