@@ -1,6 +1,7 @@
 "use strict";
 
 const CACHE_KEY = "github_navigator_cache";
+const NOTIFICATIONS_KEY = "github_navigator_notifications";
 const PAT_KEY = "github_navigator_pat";
 const USER_KEY = "github_navigator_user";
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -29,6 +30,7 @@ const modalCancelBtn = document.getElementById("modal-cancel");
 const SORT_KEY = "github_navigator_sort";
 
 let data = { orgs: [], repos: [] };
+let notifications = { total: 0, byRepo: {}, scopeMissing: false };
 let expandedOrgs = new Set();
 let sortMode = "alpha";
 
@@ -160,6 +162,17 @@ async function loadCache() {
   return result[CACHE_KEY] || null;
 }
 
+async function loadNotificationsCache() {
+  const result = await browser.storage.local.get(NOTIFICATIONS_KEY);
+  const cached = result[NOTIFICATIONS_KEY];
+  if (!cached) return { total: 0, byRepo: {}, scopeMissing: false };
+  return {
+    total: cached.total || 0,
+    byRepo: cached.byRepo || {},
+    scopeMissing: !!cached.scopeMissing,
+  };
+}
+
 async function saveCache(newData) {
   await browser.storage.local.set({
     [CACHE_KEY]: { ...newData, timestamp: Date.now() },
@@ -268,6 +281,12 @@ function renderFlat(query) {
     repoName.textContent = repo.full_name;
     repoRow.appendChild(repoName);
 
+    if (notifications.byRepo[repo.full_name]) {
+      const dot = document.createElement("span");
+      dot.className = "repo-unread-dot";
+      repoRow.appendChild(dot);
+    }
+
     repoRow.addEventListener("click", () => {
       browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
       window.close();
@@ -275,6 +294,26 @@ function renderFlat(query) {
 
     treeEl.appendChild(repoRow);
   }
+}
+
+function orgUnreadCount(orgLogin) {
+  let count = 0;
+  for (const fullName in notifications.byRepo) {
+    if (fullName.startsWith(orgLogin + "/")) {
+      count += notifications.byRepo[fullName];
+    }
+  }
+  return count;
+}
+
+function personalUnreadCount(personalRepos) {
+  let count = 0;
+  for (const repo of personalRepos) {
+    if (notifications.byRepo[repo.full_name]) {
+      count += notifications.byRepo[repo.full_name];
+    }
+  }
+  return count;
 }
 
 function renderTree() {
@@ -355,6 +394,14 @@ function renderTree() {
     name.textContent = org.login;
     header.appendChild(name);
 
+    const orgCount = orgUnreadCount(org.login);
+    if (orgCount > 0) {
+      const pill = document.createElement("span");
+      pill.className = "org-unread-count";
+      pill.textContent = String(orgCount);
+      header.appendChild(pill);
+    }
+
     const closeBtn = document.createElement("button");
     closeBtn.className = "org-close";
     closeBtn.textContent = "\u2715";
@@ -404,6 +451,12 @@ function renderTree() {
       repoName.textContent = repo.name;
       repoRow.appendChild(repoName);
 
+      if (notifications.byRepo[repo.full_name]) {
+        const dot = document.createElement("span");
+        dot.className = "repo-unread-dot";
+        repoRow.appendChild(dot);
+      }
+
       repoRow.addEventListener("click", () => {
         browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
         window.close();
@@ -428,6 +481,13 @@ function renderTree() {
     const label = document.createElement("div");
     label.className = "section-label";
     label.textContent = "Personal repos";
+    const personalCount = personalUnreadCount(personalRepos);
+    if (personalCount > 0) {
+      const pill = document.createElement("span");
+      pill.className = "org-unread-count";
+      pill.textContent = String(personalCount);
+      label.appendChild(pill);
+    }
     treeEl.appendChild(label);
 
     for (const repo of sortedPersonal) {
@@ -439,6 +499,12 @@ function renderTree() {
       repoName.className = "repo-name";
       repoName.textContent = repo.name;
       repoRow.appendChild(repoName);
+
+      if (notifications.byRepo[repo.full_name]) {
+        const dot = document.createElement("span");
+        dot.className = "repo-unread-dot";
+        repoRow.appendChild(dot);
+      }
 
       repoRow.addEventListener("click", () => {
         browser.tabs.create({ url: `https://github.com/${repo.full_name}` });
@@ -487,6 +553,7 @@ async function loadData(forceRefresh) {
   }
 
   const cache = await loadCache();
+  notifications = await loadNotificationsCache();
 
   if (!forceRefresh && isFresh(cache)) {
     data = cache;
