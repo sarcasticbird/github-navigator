@@ -58,12 +58,15 @@ async function apiFetch(path, token) {
     headers: { Authorization: `token ${token}` },
   });
 
-  if (response.status === 401 || response.status === 403) {
-    const isRateLimit = response.headers.get("x-ratelimit-remaining") === "0";
-    if (isRateLimit) {
+  if (response.status === 401) {
+    throw new Error("auth_failed");
+  }
+
+  if (response.status === 403) {
+    if (response.headers.get("x-ratelimit-remaining") === "0") {
       throw new Error("rate_limited");
     }
-    throw new Error("auth_failed");
+    throw new Error("scope_missing");
   }
 
   if (!response.ok) {
@@ -129,6 +132,37 @@ async function fetchMyLastCommits(repos, token, username) {
   }
 
   return commitDates;
+}
+
+const RELEVANT_REASONS = new Set(["review_requested", "mention"]);
+
+function summarizeNotifications(rawList) {
+  const byRepo = {};
+  let total = 0;
+  for (const item of rawList) {
+    if (!RELEVANT_REASONS.has(item.reason)) continue;
+    const fullName = item.repository && item.repository.full_name;
+    if (!fullName) continue;
+    byRepo[fullName] = (byRepo[fullName] || 0) + 1;
+    total += 1;
+  }
+  return { total, byRepo };
+}
+
+async function fetchNotifications(token) {
+  const raw = await apiFetch("/notifications?per_page=50", token);
+  return summarizeNotifications(raw);
+}
+
+async function writeNotificationsCache(summary, scopeMissing) {
+  await browser.storage.local.set({
+    [NOTIFICATIONS_KEY]: {
+      updatedAt: Date.now(),
+      total: summary.total,
+      byRepo: summary.byRepo,
+      scopeMissing,
+    },
+  });
 }
 
 async function fetchData(token, username) {
@@ -577,14 +611,38 @@ async function loadData(forceRefresh) {
   if (existingWarning) existingWarning.remove();
 
   try {
-    data = await fetchData(token, username);
+    const [freshData, notificationsResult] = await Promise.all([
+      fetchData(token, username),
+      fetchNotifications(token).then(
+        (summary) => ({ ok: true, summary }),
+        (err) => ({ ok: false, err })
+      ),
+    ]);
+
+    data = freshData;
     await saveCache(data);
+
+    if (notificationsResult.ok) {
+      notifications = { ...notificationsResult.summary, scopeMissing: false };
+      await writeNotificationsCache(notificationsResult.summary, false);
+      browser.browserAction.setBadgeText({
+        text: notifications.total > 0 ? String(notifications.total) : "",
+      });
+    } else if (notificationsResult.err.message === "scope_missing") {
+      notifications = { total: 0, byRepo: {}, scopeMissing: true };
+      await writeNotificationsCache({ total: 0, byRepo: {} }, true);
+      browser.browserAction.setBadgeText({ text: "" });
+    }
+    // For auth_failed / rate_limited / network on the notifications side: leave
+    // the previously-rendered notifications state alone. The orgs/repos error
+    // handler below will cover whole-token failures.
+
     renderUpdatedTime(Date.now());
     renderTree();
     showView(mainView);
   } catch (err) {
-    if (err.message === "auth_failed") {
-      showError("Token is invalid or expired.", true);
+    if (err.message === "auth_failed" || err.message === "scope_missing") {
+      showError("Token is invalid or missing required scopes.", true);
     } else if (err.message === "rate_limited") {
       if (cache) {
         const warning = document.createElement("div");
