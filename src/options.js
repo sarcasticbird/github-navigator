@@ -39,6 +39,7 @@ async function saveToken() {
     await browser.alarms.clear("notifications-poll");
     browser.alarms.create("notifications-poll", { periodInMinutes: 5 });
     browser.browserAction.setBadgeText({ text: "" });
+    browser.runtime.sendMessage({ type: "poll" }).catch(() => {});
     statusEl.textContent = `Token saved for ${user.login}.`;
     statusEl.className = "status success";
   } catch (err) {

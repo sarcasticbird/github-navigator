@@ -105,6 +105,12 @@ browser.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+browser.runtime.onMessage.addListener((message) => {
+  if (message && message.type === "poll") {
+    poll();
+  }
+});
+
 browser.runtime.onInstalled.addListener(async () => {
   await setBadgeColor();
   await ensureAlarm();
