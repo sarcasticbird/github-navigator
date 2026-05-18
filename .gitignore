@@ -1,3 +1,9 @@
 dist/
 node_modules/
 *.xpi
+
+# personal dev tooling
+.kata.toml
+.kata.local.toml
+.roborev.toml
+.claude/

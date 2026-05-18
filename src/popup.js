@@ -31,9 +31,10 @@ const modalCancelBtn = document.getElementById("modal-cancel");
 const SORT_KEY = "github_navigator_sort";
 
 let data = { orgs: [], repos: [] };
-let notifications = { total: 0, byRepo: {}, scopeMissing: false };
+let notifications = { total: 0, byRepo: {}, items: [], scopeMissing: false };
 let expandedOrgs = new Set();
 let sortMode = "alpha";
+let notificationsViewActive = false;
 
 // --- Views ---
 
@@ -41,7 +42,7 @@ function showView(view) {
   [setupView, mainView, errorView, loadingView].forEach((v) => {
     v.hidden = v !== view;
   });
-  if (view === mainView) {
+  if (view === mainView && !notificationsViewActive) {
     searchInput.focus();
   }
 }
@@ -138,22 +139,85 @@ async function fetchMyLastCommits(repos, token, username) {
 
 const RELEVANT_REASONS = new Set(["review_requested", "mention"]);
 
+// Keep in sync with background.js
+function toHtmlUrl(apiUrl) {
+  if (!apiUrl) return null;
+  return apiUrl
+    .replace("https://api.github.com/repos/", "https://github.com/")
+    .replace("/pulls/", "/pull/");
+}
+
 function summarizeNotifications(rawList) {
   const byRepo = {};
+  const items = [];
   let total = 0;
   for (const item of rawList) {
     if (!RELEVANT_REASONS.has(item.reason)) continue;
     const fullName = item.repository && item.repository.full_name;
-    if (!fullName) continue;
+    if (!fullName || !item.subject) continue;
     byRepo[fullName] = (byRepo[fullName] || 0) + 1;
     total += 1;
+    items.push({
+      id: item.id,
+      reason: item.reason,
+      subject: {
+        title: item.subject.title,
+        type: item.subject.type,
+      },
+      repository: {
+        full_name: fullName,
+        owner: { avatar_url: item.repository.owner.avatar_url },
+      },
+      updated_at: item.updated_at,
+      htmlUrl: toHtmlUrl(item.subject.url),
+    });
   }
-  return { total, byRepo };
+  items.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  return { total, byRepo, items };
+}
+
+function extractNumber(apiUrl) {
+  if (!apiUrl) return null;
+  const match = apiUrl.match(/\/(\d+)$/);
+  return match ? match[1] : null;
+}
+
+async function enrichItemStates(items, token) {
+  for (let i = 0; i < items.length; i += 10) {
+    const batch = items.slice(i, i + 10);
+    const results = await Promise.allSettled(
+      batch.map((item) => {
+        if (!item.htmlUrl) return Promise.resolve(null);
+        const apiPath = item.htmlUrl
+          .replace("https://github.com/", "/repos/")
+          .replace("/pull/", "/pulls/");
+        return apiFetch(apiPath, token);
+      })
+    );
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled" && result.value) {
+        const data = result.value;
+        if (data.merged) {
+          batch[j].state = "merged";
+        } else {
+          batch[j].state = data.state || "open";
+        }
+      }
+      batch[j].number = extractNumber(batch[j].htmlUrl);
+    }
+  }
 }
 
 async function fetchNotifications(token) {
   const raw = await apiFetch("/notifications?per_page=50", token);
-  return summarizeNotifications(raw);
+  const summary = summarizeNotifications(raw);
+  try {
+    await enrichItemStates(summary.items, token);
+  } catch (_) {
+    // enrichment is best-effort
+  }
+  return summary;
 }
 
 async function writeNotificationsCache(summary, scopeMissing) {
@@ -162,6 +226,7 @@ async function writeNotificationsCache(summary, scopeMissing) {
       updatedAt: Date.now(),
       total: summary.total,
       byRepo: summary.byRepo,
+      items: summary.items || [],
       scopeMissing,
     },
   });
@@ -201,10 +266,11 @@ async function loadCache() {
 async function loadNotificationsCache() {
   const result = await browser.storage.local.get(NOTIFICATIONS_KEY);
   const cached = result[NOTIFICATIONS_KEY];
-  if (!cached) return { total: 0, byRepo: {}, scopeMissing: false };
+  if (!cached) return { total: 0, byRepo: {}, items: [], scopeMissing: false };
   return {
     total: cached.total || 0,
     byRepo: cached.byRepo || {},
+    items: cached.items || [],
     scopeMissing: !!cached.scopeMissing,
   };
 }
@@ -217,6 +283,121 @@ async function saveCache(newData) {
 
 function isFresh(cache) {
   return cache && Date.now() - cache.timestamp < CACHE_TTL_MS;
+}
+
+function relativeTime(isoDate) {
+  const seconds = Math.floor((Date.now() - new Date(isoDate)) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const STATE_ICONS = {
+  open: {
+    PullRequest: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#1a7f37"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>',
+    Issue: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#1a7f37"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>',
+  },
+  merged: {
+    PullRequest: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#8250df"><path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM4.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"/></svg>',
+    Issue: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#8250df"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/></svg>',
+  },
+  closed: {
+    PullRequest: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#cf222e"><path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l2 2a.75.75 0 0 1-1.06 1.06L12 3.56l-.72.72a.75.75 0 1 1-1.06-1.06l2-2ZM3.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>',
+    Issue: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#cf222e"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm9.78-2.22-5.5 5.5a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l5.5-5.5a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042Z"/></svg>',
+  },
+};
+
+function stateIcon(state, subjectType) {
+  const type = subjectType === "PullRequest" ? "PullRequest" : "Issue";
+  const s = state || "open";
+  const icons = STATE_ICONS[s] || STATE_ICONS.open;
+  return icons[type] || icons.Issue;
+}
+
+function renderNotifications() {
+  treeEl.replaceChildren();
+
+  const items = notifications.items || [];
+
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "notif-empty";
+    empty.textContent = "No pending review requests or mentions";
+    treeEl.appendChild(empty);
+  } else {
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "notif-row";
+
+      const repo = document.createElement("div");
+      repo.className = "notif-repo";
+      const icon = document.createElement("span");
+      icon.className = "notif-icon";
+      const tmpl = document.createElement("template");
+      tmpl.innerHTML = stateIcon(item.state, item.subject.type);
+      icon.appendChild(tmpl.content.firstChild);
+      repo.appendChild(icon);
+      const repoText = document.createTextNode(
+        item.repository.full_name + (item.number ? " #" + item.number : "")
+      );
+      repo.appendChild(repoText);
+      row.appendChild(repo);
+
+      const title = document.createElement("span");
+      title.className = "notif-title";
+      title.textContent = item.subject.title;
+      row.appendChild(title);
+
+      const reason = document.createElement("span");
+      reason.className = "notif-reason" + (item.reason === "mention" ? " mention" : "");
+      reason.textContent = item.reason === "review_requested" ? "review" : "mention";
+      row.appendChild(reason);
+
+      const time = document.createElement("span");
+      time.className = "notif-time";
+      time.textContent = relativeTime(item.updated_at);
+      row.appendChild(time);
+
+      if (item.htmlUrl) {
+        row.addEventListener("click", () => {
+          browser.tabs.create({ url: item.htmlUrl });
+          window.close();
+        });
+      } else {
+        row.style.cursor = "default";
+      }
+
+      treeEl.appendChild(row);
+    }
+  }
+
+  const footerLink = document.createElement("div");
+  footerLink.className = "notif-footer-link";
+  footerLink.textContent = "View all on GitHub";
+  footerLink.addEventListener("click", () => {
+    browser.tabs.create({ url: "https://github.com/notifications" });
+    window.close();
+  });
+  treeEl.appendChild(footerLink);
+}
+
+function toggleNotificationsView() {
+  notificationsViewActive = !notificationsViewActive;
+
+  searchInput.style.display = notificationsViewActive ? "none" : "";
+  sortToggleBtn.style.display = notificationsViewActive ? "none" : "";
+
+  if (notificationsViewActive) {
+    openNotificationsBtn.classList.add("bell-active");
+    renderNotifications();
+  } else {
+    openNotificationsBtn.classList.remove("bell-active");
+    renderTree();
+  }
 }
 
 // --- Sorting ---
@@ -614,7 +795,11 @@ async function loadData(forceRefresh) {
   if (cache) {
     data = cache;
     renderUpdatedTime(cache.timestamp);
-    renderTree();
+    if (notificationsViewActive) {
+      renderNotifications();
+    } else {
+      renderTree();
+    }
     renderScopeWarning();
     showView(mainView);
   } else {
@@ -646,8 +831,8 @@ async function loadData(forceRefresh) {
       text: notifications.total > 0 ? String(notifications.total) : "",
     });
   } else if (notificationsResult.err.message === "scope_missing") {
-    notifications = { total: 0, byRepo: {}, scopeMissing: true };
-    await writeNotificationsCache({ total: 0, byRepo: {} }, true);
+    notifications = { total: 0, byRepo: {}, items: [], scopeMissing: true };
+    await writeNotificationsCache({ total: 0, byRepo: {}, items: [] }, true);
     browser.browserAction.setBadgeText({ text: "" });
   }
 
@@ -657,7 +842,11 @@ async function loadData(forceRefresh) {
       await saveCache(data);
       renderUpdatedTime(Date.now());
     }
-    renderTree();
+    if (notificationsViewActive) {
+      renderNotifications();
+    } else {
+      renderTree();
+    }
     renderScopeWarning();
     showView(mainView);
   } else {
@@ -666,7 +855,11 @@ async function loadData(forceRefresh) {
       showError("Token is invalid or missing required scopes.", true);
     } else if (errMsg === "rate_limited") {
       if (cache) {
-        renderTree();
+        if (notificationsViewActive) {
+          renderNotifications();
+        } else {
+          renderTree();
+        }
         const warning = document.createElement("div");
         warning.className = "warning rate-limited";
         warning.textContent = "Rate limited \u2014 showing cached data.";
@@ -678,7 +871,11 @@ async function loadData(forceRefresh) {
     } else if (!cache) {
       showError("Failed to fetch data from GitHub.", false);
     } else {
-      renderTree();
+      if (notificationsViewActive) {
+        renderNotifications();
+      } else {
+        renderTree();
+      }
       renderScopeWarning();
     }
   }
@@ -686,14 +883,16 @@ async function loadData(forceRefresh) {
 
 // --- Event Listeners ---
 
-searchInput.addEventListener("input", renderTree);
+searchInput.addEventListener("input", () => {
+  if (!notificationsViewActive) renderTree();
+});
 
 sortToggleBtn.addEventListener("click", async () => {
   const idx = SORT_MODES.indexOf(sortMode);
   sortMode = SORT_MODES[(idx + 1) % SORT_MODES.length];
   await browser.storage.local.set({ [SORT_KEY]: sortMode });
   updateSortButton();
-  renderTree();
+  if (!notificationsViewActive) renderTree();
 });
 
 refreshBtn.addEventListener("click", () => loadData(true));
@@ -705,10 +904,7 @@ closeAllTabsBtn.addEventListener("click", () => {
   );
 });
 
-openNotificationsBtn.addEventListener("click", () => {
-  browser.tabs.create({ url: "https://github.com/notifications" });
-  window.close();
-});
+openNotificationsBtn.addEventListener("click", toggleNotificationsView);
 
 openSettingsBtn.addEventListener("click", () => {
   browser.runtime.openOptionsPage();
