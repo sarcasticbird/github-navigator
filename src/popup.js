@@ -176,9 +176,48 @@ function summarizeNotifications(rawList) {
   return { total, byRepo, items };
 }
 
+function extractNumber(apiUrl) {
+  if (!apiUrl) return null;
+  const match = apiUrl.match(/\/(\d+)$/);
+  return match ? match[1] : null;
+}
+
+async function enrichItemStates(items, token) {
+  for (let i = 0; i < items.length; i += 10) {
+    const batch = items.slice(i, i + 10);
+    const results = await Promise.allSettled(
+      batch.map((item) => {
+        if (!item.htmlUrl) return Promise.resolve(null);
+        const apiPath = item.htmlUrl
+          .replace("https://github.com/", "/repos/")
+          .replace("/pull/", "/pulls/");
+        return apiFetch(apiPath, token);
+      })
+    );
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled" && result.value) {
+        const data = result.value;
+        if (data.merged) {
+          batch[j].state = "merged";
+        } else {
+          batch[j].state = data.state || "open";
+        }
+      }
+      batch[j].number = extractNumber(batch[j].htmlUrl);
+    }
+  }
+}
+
 async function fetchNotifications(token) {
   const raw = await apiFetch("/notifications?per_page=50", token);
-  return summarizeNotifications(raw);
+  const summary = summarizeNotifications(raw);
+  try {
+    await enrichItemStates(summary.items, token);
+  } catch (_) {
+    // enrichment is best-effort
+  }
+  return summary;
 }
 
 async function writeNotificationsCache(summary, scopeMissing) {
@@ -257,6 +296,28 @@ function relativeTime(isoDate) {
   return `${days}d ago`;
 }
 
+const STATE_ICONS = {
+  open: {
+    PullRequest: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#1a7f37"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>',
+    Issue: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#1a7f37"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>',
+  },
+  merged: {
+    PullRequest: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#8250df"><path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM4.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"/></svg>',
+    Issue: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#8250df"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/></svg>',
+  },
+  closed: {
+    PullRequest: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#cf222e"><path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l2 2a.75.75 0 0 1-1.06 1.06L12 3.56l-.72.72a.75.75 0 1 1-1.06-1.06l2-2ZM3.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>',
+    Issue: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#cf222e"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm9.78-2.22-5.5 5.5a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l5.5-5.5a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042Z"/></svg>',
+  },
+};
+
+function stateIcon(state, subjectType) {
+  const type = subjectType === "PullRequest" ? "PullRequest" : "Issue";
+  const s = state || "open";
+  const icons = STATE_ICONS[s] || STATE_ICONS.open;
+  return icons[type] || icons.Issue;
+}
+
 function renderNotifications() {
   treeEl.replaceChildren();
 
@@ -274,7 +335,16 @@ function renderNotifications() {
 
       const repo = document.createElement("div");
       repo.className = "notif-repo";
-      repo.textContent = item.repository.full_name;
+      const icon = document.createElement("span");
+      icon.className = "notif-icon";
+      const tmpl = document.createElement("template");
+      tmpl.innerHTML = stateIcon(item.state, item.subject.type);
+      icon.appendChild(tmpl.content.firstChild);
+      repo.appendChild(icon);
+      const repoText = document.createTextNode(
+        item.repository.full_name + (item.number ? " #" + item.number : "")
+      );
+      repo.appendChild(repoText);
       row.appendChild(repo);
 
       const title = document.createElement("span");

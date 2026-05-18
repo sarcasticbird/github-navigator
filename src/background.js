@@ -67,9 +67,48 @@ function summarizeNotifications(rawList) {
   return { total, byRepo, items };
 }
 
+function extractNumber(apiUrl) {
+  if (!apiUrl) return null;
+  const match = apiUrl.match(/\/(\d+)$/);
+  return match ? match[1] : null;
+}
+
+async function enrichItemStates(items, token) {
+  for (let i = 0; i < items.length; i += 10) {
+    const batch = items.slice(i, i + 10);
+    const results = await Promise.allSettled(
+      batch.map((item) => {
+        if (!item.htmlUrl) return Promise.resolve(null);
+        const apiPath = item.htmlUrl
+          .replace("https://github.com/", "/repos/")
+          .replace("/pull/", "/pulls/");
+        return apiFetch(apiPath, token);
+      })
+    );
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled" && result.value) {
+        const data = result.value;
+        if (data.merged) {
+          batch[j].state = "merged";
+        } else {
+          batch[j].state = data.state || "open";
+        }
+      }
+      batch[j].number = extractNumber(batch[j].htmlUrl);
+    }
+  }
+}
+
 async function fetchNotifications(token) {
   const raw = await apiFetch("/notifications?per_page=50", token);
-  return summarizeNotifications(raw);
+  const summary = summarizeNotifications(raw);
+  try {
+    await enrichItemStates(summary.items, token);
+  } catch (_) {
+    // enrichment is best-effort
+  }
+  return summary;
 }
 
 async function writeCache(summary, scopeMissing) {

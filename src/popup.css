@@ -369,9 +369,18 @@ button:hover {
 }
 
 .notif-repo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   width: 100%;
   font-size: 11px;
   color: #57606a;
+}
+
+.notif-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
 }
 
 .notif-title {
