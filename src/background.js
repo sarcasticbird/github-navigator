@@ -31,17 +31,40 @@ async function apiFetch(path, token) {
   return response.json();
 }
 
+function toHtmlUrl(apiUrl) {
+  if (!apiUrl) return null;
+  return apiUrl
+    .replace("https://api.github.com/repos/", "https://github.com/")
+    .replace("/pulls/", "/pull/");
+}
+
 function summarizeNotifications(rawList) {
   const byRepo = {};
+  const items = [];
   let total = 0;
   for (const item of rawList) {
     if (!RELEVANT_REASONS.has(item.reason)) continue;
     const fullName = item.repository && item.repository.full_name;
-    if (!fullName) continue;
+    if (!fullName || !item.subject) continue;
     byRepo[fullName] = (byRepo[fullName] || 0) + 1;
     total += 1;
+    items.push({
+      id: item.id,
+      reason: item.reason,
+      subject: {
+        title: item.subject.title,
+        type: item.subject.type,
+      },
+      repository: {
+        full_name: fullName,
+        owner: { avatar_url: item.repository.owner.avatar_url },
+      },
+      updated_at: item.updated_at,
+      htmlUrl: toHtmlUrl(item.subject.url),
+    });
   }
-  return { total, byRepo };
+  items.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  return { total, byRepo, items };
 }
 
 async function fetchNotifications(token) {
@@ -55,6 +78,7 @@ async function writeCache(summary, scopeMissing) {
       updatedAt: Date.now(),
       total: summary.total,
       byRepo: summary.byRepo,
+      items: summary.items || [],
       scopeMissing,
     },
   });
@@ -82,7 +106,7 @@ async function pollOnce() {
   const stored = await browser.storage.local.get(PAT_KEY);
   const token = stored[PAT_KEY];
   if (!token) {
-    await writeCache({ total: 0, byRepo: {} }, false);
+    await writeCache({ total: 0, byRepo: {}, items: [] }, false);
     updateBadge(0);
     return;
   }
@@ -93,10 +117,10 @@ async function pollOnce() {
     updateBadge(summary.total);
   } catch (err) {
     if (err.message === "scope_missing") {
-      await writeCache({ total: 0, byRepo: {} }, true);
+      await writeCache({ total: 0, byRepo: {}, items: [] }, true);
       updateBadge(0);
     } else if (err.message === "auth_failed") {
-      await writeCache({ total: 0, byRepo: {} }, false);
+      await writeCache({ total: 0, byRepo: {}, items: [] }, false);
       updateBadge(0);
     }
     // rate_limited, network/5xx: leave previous cache as-is, do nothing
