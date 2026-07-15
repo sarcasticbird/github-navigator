@@ -23,6 +23,7 @@ const openSettingsBtn = document.getElementById("open-settings");
 const errorSettingsBtn = document.getElementById("error-settings");
 const closeAllTabsBtn = document.getElementById("close-all-tabs");
 const openNotificationsBtn = document.getElementById("open-notifications");
+const openMyPrsBtn = document.getElementById("open-my-prs");
 const modalEl = document.getElementById("modal");
 const modalMessageEl = document.getElementById("modal-message");
 const modalOkBtn = document.getElementById("modal-ok");
@@ -905,6 +906,11 @@ closeAllTabsBtn.addEventListener("click", () => {
 });
 
 openNotificationsBtn.addEventListener("click", toggleNotificationsView);
+
+openMyPrsBtn.addEventListener("click", () => {
+  browser.tabs.create({ url: "https://github.com/pulls" });
+  window.close();
+});
 
 openSettingsBtn.addEventListener("click", () => {
   browser.runtime.openOptionsPage();

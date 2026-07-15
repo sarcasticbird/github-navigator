@@ -1,6 +1,6 @@
 {
   "name": "github-navigator",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Firefox/Zen Browser extension for quick access to GitHub orgs and repos.",
   "scripts": {

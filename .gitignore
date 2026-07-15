@@ -7,3 +7,5 @@ node_modules/
 .kata.local.toml
 .roborev.toml
 .claude/
+# roborev snapshots
+/.roborev/

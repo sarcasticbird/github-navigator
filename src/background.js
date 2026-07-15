@@ -4,7 +4,11 @@ const API_BASE = "https://api.github.com";
 const PAT_KEY = "github_navigator_pat";
 const NOTIFICATIONS_KEY = "github_navigator_notifications";
 const ALARM_NAME = "notifications-poll";
-const POLL_INTERVAL_MINUTES = 5;
+const POLL_INTERVAL_MINUTES = 1;
+const LAST_MODIFIED_KEY = "github_navigator_notifications_last_modified";
+// Force a full (unconditional) fetch at least this often, since GitHub's 304
+// is keyed on new notification activity and may not reflect read-state changes.
+const FULL_REFRESH_MS = 5 * 60 * 1000;
 const RELEVANT_REASONS = new Set(["review_requested", "mention"]);
 
 async function apiFetch(path, token) {
@@ -100,14 +104,41 @@ async function enrichItemStates(items, token) {
   }
 }
 
-async function fetchNotifications(token) {
-  const raw = await apiFetch("/notifications?per_page=50", token);
+async function fetchNotifications(token, lastModified) {
+  const headers = { Authorization: `token ${token}` };
+  if (lastModified) {
+    headers["If-Modified-Since"] = lastModified;
+  }
+  const response = await fetch(`${API_BASE}/notifications?per_page=50`, {
+    headers,
+    cache: "no-store",
+  });
+
+  // 304: nothing changed since last poll; doesn't count against rate limit.
+  if (response.status === 304) {
+    return { notModified: true };
+  }
+  if (response.status === 401) {
+    throw new Error("auth_failed");
+  }
+  if (response.status === 403) {
+    if (response.headers.get("x-ratelimit-remaining") === "0") {
+      throw new Error("rate_limited");
+    }
+    throw new Error("scope_missing");
+  }
+  if (!response.ok) {
+    throw new Error(`api_error_${response.status}`);
+  }
+
+  const raw = await response.json();
   const summary = summarizeNotifications(raw);
   try {
     await enrichItemStates(summary.items, token);
   } catch (_) {
     // enrichment is best-effort
   }
+  summary.lastModified = response.headers.get("Last-Modified");
   return summary;
 }
 
@@ -142,7 +173,7 @@ function poll() {
 }
 
 async function pollOnce() {
-  const stored = await browser.storage.local.get(PAT_KEY);
+  const stored = await browser.storage.local.get([PAT_KEY, LAST_MODIFIED_KEY, NOTIFICATIONS_KEY]);
   const token = stored[PAT_KEY];
   if (!token) {
     await writeCache({ total: 0, byRepo: {}, items: [] }, false);
@@ -150,10 +181,23 @@ async function pollOnce() {
     return;
   }
 
+  const cached = stored[NOTIFICATIONS_KEY];
+  const cacheFresh =
+    cached && cached.updatedAt && Date.now() - cached.updatedAt < FULL_REFRESH_MS;
+  const lastModified = cacheFresh ? stored[LAST_MODIFIED_KEY] : null;
+
   try {
-    const summary = await fetchNotifications(token);
+    const summary = await fetchNotifications(token, lastModified);
+    if (summary.notModified) {
+      // Badge text doesn't survive browser restarts; restore it from cache.
+      updateBadge(cached && cached.total ? cached.total : 0);
+      return;
+    }
     await writeCache(summary, false);
     updateBadge(summary.total);
+    if (summary.lastModified) {
+      await browser.storage.local.set({ [LAST_MODIFIED_KEY]: summary.lastModified });
+    }
   } catch (err) {
     if (err.message === "scope_missing") {
       await writeCache({ total: 0, byRepo: {}, items: [] }, true);
@@ -168,7 +212,8 @@ async function pollOnce() {
 
 async function ensureAlarm() {
   const existing = await browser.alarms.get(ALARM_NAME);
-  if (!existing) {
+  // Recreate if missing or if the interval changed in an update.
+  if (!existing || existing.periodInMinutes !== POLL_INTERVAL_MINUTES) {
     browser.alarms.create(ALARM_NAME, { periodInMinutes: POLL_INTERVAL_MINUTES });
   }
 }
