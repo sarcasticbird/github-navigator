@@ -35,9 +35,10 @@ async function saveToken() {
     await browser.storage.local.remove([
       "github_navigator_cache",
       "github_navigator_notifications",
+      "github_navigator_notifications_last_modified",
     ]);
     await browser.alarms.clear("notifications-poll");
-    browser.alarms.create("notifications-poll", { periodInMinutes: 5 });
+    browser.alarms.create("notifications-poll", { periodInMinutes: 1 });
     browser.browserAction.setBadgeText({ text: "" });
     browser.runtime.sendMessage({ type: "poll" }).catch(() => {});
     statusEl.textContent = `Token saved for ${user.login}.`;
